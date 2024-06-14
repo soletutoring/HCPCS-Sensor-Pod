@@ -3,3 +3,4 @@ matt@raspberrypi:~ $ arduino-cli board list
 Port         Protocol Type              Board Name FQBN Core
 /dev/ttyACM0 serial   Serial Port (USB) Unknown
 /dev/ttyS0   serial   Serial Port       Unknown
+
