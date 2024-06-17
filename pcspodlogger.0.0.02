@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+#PCSpod datalogger program
+#version 0.0.02
+#created 6/16/2024
+
+import spidev
+import time
+from datetime import datetime, timedelta
+import sqlite3
+import os
+import socket
+
+# Open SPI bus
+spi = spidev.SpiDev()
+spi.open(0, 0)
+spi.max_speed_hz = 1350000
+
+def read_channel(channel):
+    # Perform SPI transaction and store returned bits in 'r'
+    r = spi.xfer2([1, (8 + channel) << 4, 0])
+    # Extract ADC value from returned bits
+    adc_out = ((r[1] & 3) << 8) + r[2]
+    return adc_out
+
+def convert_volts(data, places):
+    # Converts ADC value to voltage
+    volts = (data * 3.3) / 1023  # Adjusted to reflect 3.3V reference
+    volts = round(volts, places)
+    return volts
+
+# Connect to the SQLite database (or create it if it doesn't exist)
+conn = sqlite3.connect('sensor_data.db')
+c = conn.cursor()
+
+# Ensure the sensor_data table exists
+c.execute('''
+CREATE TABLE IF NOT EXISTS sensor_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    SPOD TEXT,
+    utc_time TEXT,
+    cst_time TEXT,
+    ch0 REAL,
+    ch1 REAL,
+    ch2 REAL,
+    ch3 REAL,
+    ch4 REAL,
+    ch5 REAL,
+    ch6 REAL,
+    ch7 REAL,
+    adc0 INTEGER,
+    adc1 INTEGER,
+    adc2 INTEGER,
+    adc3 INTEGER,
+    adc4 INTEGER,
+    adc5 INTEGER,
+    adc6 INTEGER,
+    adc7 INTEGER
+)
+''')
+conn.commit()
+
+# Try to get the hostname from the environment variable
+SPOD = os.getenv('HOSTNAME')
+
+# Get PCSpod serial number from the USER environment variable
+if not SPOD or SPOD == 'unknown_user':
+    SPOD = socket.gethostname()
+
+try:
+    while True:
+        # Get current UTC time
+        utc_time = datetime.utcnow()
+
+        # Convert UTC time to CST
+        cst_conversion = utc_time - timedelta(hours=6)
+
+        # Format times
+        utc_time_str = utc_time.strftime('%Y-%m-%d %H:%M:%S')
+        cst_time_str = cst_conversion.strftime('%Y-%m-%d %H:%M:%S')
+
+        # Read all 8 channels
+        readings = []
+        adc_counts = []  # Initialize adc_counts list
+        for channel in range(8):
+            adc_count = read_channel(channel)
+            volts = convert_volts(adc_count, 2)
+            readings.append(volts)
+            adc_counts.append(adc_count)
+
+        # Insert data into the database
+        c.execute('''
+        INSERT INTO sensor_data (utc_time, cst_time, SPOD, ch0, ch1, ch2, ch3, ch4, ch5, ch6, ch7, adc0, adc1, adc2, adc3, adc4, adc5, adc6, adc7)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (utc_time_str, cst_time_str, SPOD, *readings, *adc_counts))
+
+        # Print the record to the console (optional)
+        record = f"{SPOD}, utc_{utc_time_str}, cst_{cst_time_str}," + ",".join([f"CH{ch}: {reading}V" for ch, reading in enumerate(readings)] + [f"ADC{ch}: {adc_count}" for ch, adc_count in enumerate(adc_counts)])
+        print(record)
+        time.sleep(1)
+except KeyboardInterrupt:
+    pass
+finally:
+    # Close the database connection when the script is stopped
+    conn.close()
