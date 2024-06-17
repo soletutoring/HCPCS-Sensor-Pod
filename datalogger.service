@@ -1,0 +1,13 @@
+Description=datalogger service
+After=multi-user.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/CAMP/Program/pcspodlogger.py
+Restart=always
+RestartSec=10
+User=CAMP
+WorkingDirectory=/home/CAMP/Program/
+Environment="PATH=/usr/bin:/usr/local/bin"
+
+[Install]
+WantedBy=multi-user.target
